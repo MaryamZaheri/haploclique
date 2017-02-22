@@ -195,7 +195,15 @@ deque<AlignmentRecord*>* readBamFile(string filename, vector<string>& readNames,
 
     bamreader.Close();
 
-    auto comp = [](AlignmentRecord* r1, AlignmentRecord* r2) { return r1->getIntervalStart() < r2->getIntervalStart(); };
+//    auto comp = [](AlignmentRecord* r1, AlignmentRecord* r2) { return r1->getIntervalStart() < r2->getIntervalStart(); }; //Maryam
+    
+    auto comp = [](AlignmentRecord* r1, AlignmentRecord* r2) {  //Maryam
+        if(r1->getIntervalStart() == r2->getIntervalStart()) {
+            return (*(r1->getReadNamesSet().begin())) < (*(r2->getReadNamesSet().begin()));
+        } else {
+            return r1->getIntervalStart() < r2->getIntervalStart();
+        }
+    };
 
     sort(reads->begin(), reads->end(), comp);
     cout << "Read BamFile: done" << endl;
