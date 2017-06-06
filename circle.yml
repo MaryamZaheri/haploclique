@@ -23,5 +23,4 @@ dependencies:
 test:
   override:
     - cd build; make check
-    - pwd
-    - ls
+    - cd build; pwd; ls
