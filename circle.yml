@@ -24,3 +24,6 @@ test:
   override:
     - cd build; make check
     - cd build; cp cram.xml $CIRCLE_ARTIFACTS
+    - cd test; pwd; ls
+    - cd test/cram; ls
+    - cd test/data/simulation; ls
