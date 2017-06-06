@@ -40,7 +40,6 @@
 #include "AlignmentRecord.h"
 #include "QuasispeciesEdgeCalculator.h"
 #include "NewEdgeCalculator.h"
-//#include "NoMeEdgeCalculator.h"
 #include "CliqueFinder.h"
 #include "CLEVER.h"
 #include "BronKerbosch.h"
@@ -99,19 +98,21 @@ Options:
   -d NUM --doc_haplotypes=NUM              Used in simulation studies with known
                                            haplotypes to document which reads
                                            contributed to which final cliques (3 or 5).
-  -p0 --noProb0                            ignore the tail probabilites during edge
+  -p0 --no_prob0                            ignore the tail probabilites during edge
                                            calculation in <output>.
   -gff --gff                               Option to create GFF File from output. <output> is used as prefix.
   -bam --bam                               Option to create BAM File from output. <output> is used as prefix.
-  -mc NUM --max_cliques=NUM                Set a threshold for the maximal number of cliques which should be
-                                           considered in the next iteration.
+  -mc NUM --max_cliques=NUM                Set a threshold for the maximal number of cliques which
+                                           should be considered in the next iteration.
+  -lc NUM --limit_clique_size=NUM          Set a threshold to limit the size of cliques.
+
 )";
 
 void usage() {
     cerr << USAGE;
     exit(1);
 }
-
+/** reads mean and standard deviation of the insert size */
 bool read_mean_and_sd(const string& filename, double* mean, double* sd) {
     typedef boost::tokenizer<boost::char_separator<char> > tokenizer_t;
     boost::char_separator<char> whitespace_separator(" \t");
@@ -133,122 +134,69 @@ bool read_mean_and_sd(const string& filename, double* mean, double* sd) {
     }
     return true;
 }
-
-deque<AlignmentRecord*>* readBamFile(string filename, vector<string>& readNames, unsigned int& maxPosition, BamTools::SamHeader& header, BamTools::RefVector& references) {
-    //readNames will contain original read names (not id which is set by addAlignment in CLEVER.cpp)
+/** reads BamFile */
+deque<AlignmentRecord*>* readBamFile(string filename, vector<string>& readNames, unsigned int& max_position, BamTools::SamHeader& header, BamTools::RefVector& references) {
+    // readNames will contain original read names (not id which is set by addAlignment in CLEVER.cpp)
     typedef std::unordered_map<std::string, AlignmentRecord*> name_map_t;
     name_map_t names_to_reads;
     deque<AlignmentRecord*>* reads = new deque<AlignmentRecord*>;
     BamTools::BamReader bamreader;
+
     if (not bamreader.Open(filename)) {
-        cerr << bamreader.GetFilename() << endl;
-        throw std::runtime_error("Couldn't open Bamfile");
+        throw std::runtime_error("Couldn't open Bamfile.");
     }
+    
     BamTools::BamAlignment alignment;
+    
     // retrieve 'metadata' from input BAM files, these are required by BamWriter
     header = bamreader.GetHeader();
     references = bamreader.GetReferenceData();
 
-    //int readcounter = 0;
-    //int singleendcounter = 0;
-    //int pairedendcounter = 0;
-    //int overlap = 0;
-
     while (bamreader.GetNextAlignment(alignment)) {
-        /*std::size_t found = alignment.QueryBases.find('N');
-        if (found!=std::string::npos){
-            cout << alignment.Name << endl;
-            cout << alignment.QueryBases << endl;
-            cout << alignment.Qualities << endl;
-            cout << endl;
-        }*/
         bool valid = false;
         for (auto& i : alignment.CigarData){
             if (i.Type == 'M' && i.Length > 0) valid = true;
         }
         if(alignment.CigarData.size() > 0 && valid){
             if(names_to_reads.count(alignment.Name) > 0) {
-                //cout << alignment.Name << endl;
                 names_to_reads[alignment.Name]->pairWith(alignment);
-                /*if (names_to_reads[alignment.Name]->isSingleEnd()){
-                    ++overlap;
-                    ++readcounter;
-                } else {
-                    pairedendcounter++;
-                    ++readcounter;
-                }*/
                 reads->push_back(names_to_reads[alignment.Name]);
                 names_to_reads.erase(alignment.Name);
             } else {
                 names_to_reads[alignment.Name] = new AlignmentRecord(alignment, readNames.size(), &readNames);
                 readNames.push_back(alignment.Name);
-                //++readcounter;
             }
         }
     }
 
-    // Push all single-end reads remaining in names_to_reads into the reads vector. Unmapped reads are filtered out in advance.
+    // push all single-end reads remaining in names_to_reads into the reads vector. Unmapped reads are filtered out in advance.
     for (const auto& i : names_to_reads) {
         reads->push_back(i.second);
-        //readcounter++;
+    }
+    
+    // if no reads could be retrieved from the BamFile
+    if (reads->empty()){
+        cerr << bamreader.GetFilename() << endl;
+        throw std::runtime_error("No reads could be retrieved from the BamFile. ");
     }
 
     bamreader.Close();
-
-//    auto comp = [](AlignmentRecord* r1, AlignmentRecord* r2) { return r1->getIntervalStart() < r2->getIntervalStart(); }; //Maryam
     
-    auto comp = [](AlignmentRecord* r1, AlignmentRecord* r2) {  //Maryam
-        if(r1->getIntervalStart() == r2->getIntervalStart()) {
-            return (*(r1->getReadNamesSet().begin())) < (*(r2->getReadNamesSet().begin()));
-        } else {
-            return r1->getIntervalStart() < r2->getIntervalStart();
-        }
-    };
-
+    auto comp = [](AlignmentRecord* r1, AlignmentRecord* r2) { return r1->getIntervalStart() < r2->getIntervalStart(); };
+    
     sort(reads->begin(), reads->end(), comp);
     cout << "Read BamFile: done" << endl;
 
-    //DEBUGGING
-    //check which alignments have no cigar string -> no covered positions -> no edge possible
-    /*while(not reads->empty()){
-        assert(reads->front() != nullptr);
-        unique_ptr<AlignmentRecord> al_ptr(reads->front());
-        reads->pop_front();
-        if (al_ptr->getCigar1().size() == 0){
-            cout << al_ptr->getName() << endl;
-        }
-    }
-    //cout << "Number of Reads: " << readcounter << endl;
-    //cout << "Number of Pairs: " << pairedendcounter << endl;
-    //cout << "Number of Overlapping Pairs: " << overlap << endl;
-    //check number of single ends and paired ends after merging
-    int counter = 0;
-    while(not reads->empty()){
-            assert(reads->front() != nullptr);
-            unique_ptr<AlignmentRecord> al_ptr(reads->front());
-            reads->pop_front();
-            if (al_ptr->isSingleEnd()){
-                singleendcounter++;
-            } else if (al_ptr->isPairedEnd()){
-                pairedendcounter++;
-            }
-            counter++;
-    }
-    cout << singleendcounter << " " << pairedendcounter << " " <<  counter << endl;
-    */
-    maxPosition = (*std::max_element(std::begin(*reads), std::end(*reads),
+    max_position = (*std::max_element(std::begin(*reads), std::end(*reads),
                               [](const AlignmentRecord* lhs,const AlignmentRecord* rhs){
         return lhs->getIntervalEnd() < rhs->getIntervalEnd();
     }))->getIntervalEnd();
-
 
     return reads;
 }
 
 int main(int argc, char* argv[]) {
  
-    //cout << "Test\n" << endl;
-
     map<std::string, docopt::value> args
         = docopt::docopt(USAGE,
                          { argv + 1, argv + argc },
@@ -260,7 +208,7 @@ int main(int argc, char* argv[]) {
     }
     // PARAMETERS
     string bamfile = args["<bamfile>"].asString();
-    string outfile = "quasispecies.fasta";
+    string outfile = "quasispecies";
     if (args["<output>"]) outfile = args["<output>"].asString();
     double edge_quasi_cutoff_cliques = stod(args["--edge_quasi_cutoff_cliques"].asString());
     double edge_quasi_cutoff_single = stod(args["--edge_quasi_cutoff_single"].asString());
@@ -285,13 +233,14 @@ int main(int argc, char* argv[]) {
     if (args["--log"]) logfile = args["--log"].asString();
     int doc_haplotypes = 0;
     if (args["--doc_haplotypes"]) doc_haplotypes = stoi(args["--doc_haplotypes"].asString());
-    bool noProb0 = args["--noProb0"].asBool();
-    //-ot CHAR --output_type=CHAR
+    bool no_prob0 = args["--no_prob0"].asBool();
+    // -ot CHAR --output_type=CHAR
     bool bam = args["--bam"].asBool();
     bool gff = args["--gff"].asBool();
     int max_cliques = 0;
     if (args["--max_cliques"]) max_cliques = stoi(args["--max_cliques"].asString());
-
+    int limit_clique_size = 0;
+    if (args["--limit_clique_size"]) limit_clique_size = stoi(args["--limit_clique_size"].asString());
 
     // END PARAMETERS
 
@@ -301,10 +250,9 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    //read allel frequency distributions
+    // read allel frequency distributions
     std::unordered_map<int, double> simpson_map;
-    unsigned int maxPosition2 = 0;
-    //cerr << "PARSE PRIOR";
+    unsigned int max_position2 = 0;
     cerr.flush();
     if (allel_frequencies_path.size() > 0) {
         ifstream ia(allel_frequencies_path.c_str());
@@ -319,27 +267,37 @@ int main(int argc, char* argv[]) {
             if (insertion_words.size() > 1) {
             } else {
                 simpson_map[atoi(words[0].c_str())] = std::log10(pow(atof(words[1].c_str()),2)+pow(atof(words[2].c_str()),2)+pow(atof(words[3].c_str()),2)+pow(atof(words[4].c_str()),2));
-                maxPosition2=atoi(words[0].c_str());
-                //cerr << simpson_map[atoi(words[0].c_str())] << endl;
+                max_position2=atoi(words[0].c_str());
             }
         }
         ia.close();
     }
-    //cout << "PARSE PRIOR: done" << endl;
-
 
     clock_t clock_start = clock();
-    vector<string> originalReadNames;
-    unsigned int maxPosition1;
+    vector<string> original_read_names;
+    unsigned int max_position1;
     BamTools::SamHeader header;
     BamTools::RefVector references;
-    deque<AlignmentRecord*>* reads = readBamFile(bamfile, originalReadNames,maxPosition1,header,references);
+
+    deque<AlignmentRecord*>* reads;
+    try{
+        reads = readBamFile(bamfile, original_read_names,max_position1,header,references);
+    }
+    catch(const runtime_error& error){
+        cerr << error.what() << endl;
+        return 1;
+    }
+    catch(...){
+        cerr << "Unexpected error while reading BamFile." << endl;
+        return 1;
+    }
+    
     EdgeCalculator* edge_calculator = nullptr;
     EdgeCalculator* indel_edge_calculator = nullptr;
     unique_ptr<vector<mean_and_stddev_t> > readgroup_params(nullptr);
-    maxPosition1 = (maxPosition1>maxPosition2) ? maxPosition1 : maxPosition2;
-    edge_calculator = new NewEdgeCalculator(Q, edge_quasi_cutoff_cliques, overlap_cliques, frameshift_merge, simpson_map, edge_quasi_cutoff_single, overlap_single, edge_quasi_cutoff_mixed, maxPosition1, noProb0);
-    //edge_calculator = new NoMeEdgeCalculator("HELLO");
+    max_position1 = (max_position1>max_position2) ? max_position1 : max_position2;
+    edge_calculator = new NewEdgeCalculator(Q, edge_quasi_cutoff_cliques, overlap_cliques, frameshift_merge, simpson_map, edge_quasi_cutoff_single, overlap_single, edge_quasi_cutoff_mixed, max_position1, no_prob0);
+
     if (call_indels) {
         double insert_mean = -1.0;
         double insert_stddev = -1.0;
@@ -350,12 +308,14 @@ int main(int argc, char* argv[]) {
         cerr << "Null distribution: mean " << insert_mean << ", sd " <<  insert_stddev << endl;
         indel_edge_calculator = new GaussianEdgeCalculator(indel_edge_sig_level,insert_mean,insert_stddev);
     }
+    
     std::ofstream* indel_os = nullptr;
     if (call_indels) {
         indel_os = new ofstream(indel_output_file.c_str());
     }
+    
     LogWriter* lw = nullptr;
-    unsigned int number_of_reads = originalReadNames.size();
+    unsigned int number_of_reads = original_read_names.size();
     std::vector<unsigned int> read_clique_counter (number_of_reads);
     if (logfile != "") lw = new LogWriter(logfile,read_clique_counter);
 
@@ -365,68 +325,42 @@ int main(int argc, char* argv[]) {
     if (args["bronkerbosch"].asBool()) {
         clique_finder = new BronKerbosch(*edge_calculator, collector, lw);
     } else {
-        clique_finder = new CLEVER(*edge_calculator, collector, lw, max_cliques, originalReadNames.size(), filter_singletons);
+        clique_finder = new CLEVER(*edge_calculator, collector, lw, max_cliques, limit_clique_size, original_read_names.size(), filter_singletons);
     }
     if (indel_edge_calculator != 0) {
         clique_finder->setSecondEdgeCalculator(indel_edge_calculator);
     }
     ofstream* reads_ofstream = 0;
 
-    //DEBUG
-    //std::vector<unsigned int> res = {0,0,2,3};
-    //int min_index = std::min_element(res.begin(),res.end()) - res.begin();
-
-
     // Main loop
     int ct = 0;
     double stdev = 1.0;
     auto filter_fn = [&](unique_ptr<AlignmentRecord>& read, int size) {
-        //if (ct == 8){
-        //    cout << read->getName() << " " <<read->getProbability() << " " << 1.0 /(size) << " " << significance*stdev << endl;
-        //    bool t =  read->getProbability() < 1.0 /size - significance*stdev;
-        //    cout << t << endl;
-        //}
         return (ct == 1 and filter_singletons and read->getReadCount() <= 1) or (ct > 1 and significance != 0.0 and read->getProbability() < 1.0 / size - significance*stdev);
     };
+    
     int edgecounter = 0;
     cout << "start: " << number_of_reads;
     while (ct != iterations) {
         clique_finder->initialize();
-        //cout << "Clique_finder initialized " << ct << endl;
-        //if(ct >= 5 && reads->size()<100 ){
-        //if(ct== 5){
-        //    edge_calculator->setOverlapCliques(0.1);
-        //}
-        //if(ct==8){
-        //    int k = 0;
-        //}
         if (lw != nullptr) lw->initialize();
         int size = reads->size();
         while(not reads->empty()) {
             assert(reads->front() != nullptr);
-
             unique_ptr<AlignmentRecord> al_ptr(reads->front());
-            //if(al_ptr->getName() == "Clique_1037"){
-            //    int k = 0;
-            //}
             reads->pop_front();
             if (filter_fn(al_ptr,size)) continue;
-
             clique_finder->addAlignment(al_ptr,edgecounter);
-            //cout << "addAlignment " << ct << endl;
         }
+        
         cout << "\tedges: " << edgecounter << endl;
 
         delete reads;
-        //cout << "reads deleted " << ct << endl;
         clique_finder->finish();
-        //cout << "clique_finder finished " << ct << endl;
         reads = collector.finish();
-        //cout << "collector finish " << ct << endl;
         if (lw != nullptr) lw->finish();
 
         stdev = setProbabilities(*reads);
-        //if(ct == 5) break;
         if (clique_finder->hasConverged()) break;
         cout << ct++ << ": " << reads->size();
         edgecounter = 0;
@@ -457,11 +391,6 @@ int main(int argc, char* argv[]) {
     cout << "final: " << reads->size() << endl;
 
     for (auto&& r : *reads) {
-    //    if(r->getName() == "Clique_3370"){
-    //        for (auto& i : r->getReadNames()){
-    //            cout << i << endl;
-    //       }
-    //    }
         delete r;
     }
 
