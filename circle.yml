@@ -24,4 +24,4 @@ test:
   override:
     - cd build; make check
     - cd build; cp cram.xml $CIRCLE_ARTIFACTS
-    - locate quasispecies.fasta
+    - find -name quasispecies.fasta
