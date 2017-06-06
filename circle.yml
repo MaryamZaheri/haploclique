@@ -47,3 +47,6 @@ general:
     ignore:
       - master
       - oneclick
+      - draft_master
+      - master_circleCi
+      - placeholder

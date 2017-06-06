@@ -338,7 +338,7 @@ bool NewEdgeCalculator::edgeBetween(const AlignmentRecord & ap1, const Alignment
         unsigned int s22= ap2.getStart2();
         //--------   ---------
         //           ---------   -------
-        if(e11 < s21 && e12 < s12){
+        if(e11 < s21 && e12 < s22){
             return false;
         } //         ---------    ---------
         //-------    ---------
@@ -368,16 +368,16 @@ bool NewEdgeCalculator::edgeBetween(const AlignmentRecord & ap1, const Alignment
     //iterating the covered positions and computing ProbM and Prob0 simultaneously
     iterateCovAp(pe1, pos2, probM, pos1, equalBase, pe2, cov_ap2, tc, prob0, ap2, cov_ap1, ap1, cc);
 
-    //given the case that one read is contained in another
-    if(equalBase == cov_ap1.size() || equalBase == cov_ap2.size()){
-        return true;
-    }
     //add remaining entries, but only if they are both in the same read in the case of paired ends
     iterateRemainingCovAp(tc, pe1, cov_ap2, pe2, prob0, ap1, ap2, cov_ap1, pos1);
     iterateRemainingCovAp2(ap2, cov_ap2, pe1, ap1, tc, prob0, cov_ap1, pe2, pos2);
     //no edge if there are no common positions or incompatible gaps
     if (cc == 0 || (!checkGaps(cov_ap1, cov_ap2, aub))){
         return false;
+    }
+    //given the case that one read is contained in another
+    if(equalBase == cov_ap1.size() || equalBase == cov_ap2.size()){
+        return true;
     }
     /*TEST to see how often Prob0 is set to zero
     if(prob0 == 0.0){
