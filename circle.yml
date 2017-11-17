@@ -24,4 +24,5 @@ test:
   override:
     - cd build; make check
   post:
-    - cp quasispecies.fasta $CIRCLE_ARTIFACTS/quasispecies.fasta
+    - cp ${CMAKE_BINARY_DIR}/cram.xml $CIRCLE_ARTIFACTS/quasispecies.fasta
+    - find -name quasispecies.fasta
