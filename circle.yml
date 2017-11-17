@@ -24,4 +24,4 @@ test:
   override:
     - cd build; make check
   post:
-    - cp test/data/simulation/quasispecies.fasta $CIRCLE_ARTIFACTS/quasispecies.fasta
+    - cp quasispecies.fasta $CIRCLE_ARTIFACTS/quasispecies.fasta
