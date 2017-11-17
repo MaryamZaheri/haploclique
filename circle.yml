@@ -25,4 +25,4 @@ test:
     - cd build; make check
     - cp cram.xml $CIRCLE_ARTIFACTS/quasispecies.fasta
     - pwd; ls
-    - find -name quasispecies.fasta
+    - find / -name quasispecies.fasta
