@@ -23,6 +23,6 @@ dependencies:
 test:
   override:
     - cd build; make check
-  post:
-    - cp ${CMAKE_BINARY_DIR}/cram.xml $CIRCLE_ARTIFACTS/quasispecies.fasta
+    - cp cram.xml $CIRCLE_ARTIFACTS/quasispecies.fasta
+    - pwd; ls
     - find -name quasispecies.fasta
